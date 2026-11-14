@@ -15,8 +15,14 @@ import { LogicPlayer } from './playback'
 import { CustomEditor } from './custom'
 import { flashForMove } from './fx'
 import { isMuted, resumeAudio, setMuted } from './audio'
-import { loadSavedPuzzles, savePuzzleToLibrary, type PuzzleCodec } from './library'
 import {
+  loadSavedPuzzles,
+  removeSavedPuzzle,
+  savePuzzleToLibrary,
+  type PuzzleCodec,
+} from './library'
+import {
+  clearProgress,
   initStore,
   readLastPuzzle,
   readProgress,
@@ -120,6 +126,8 @@ export function createApp(root: HTMLElement, adapter: GameAdapter) {
 
   let session: Session | null = null
   let library: Puzzle[] = [...adapter.builtinPuzzles]
+  /** 等待第二次点击确认删除的自定义题 id（两步确认，防误删） */
+  let pendingDeleteId: string | null = null
 
   const codec: PuzzleCodec = {
     encode: (p) => adapter.custom.encodePuzzle(p),
@@ -158,11 +166,22 @@ export function createApp(root: HTMLElement, adapter: GameAdapter) {
     list.innerHTML = sortedLibrary()
       .map((p) => {
         const active = session?.puzzle.id === p.id ? ' active' : ''
+        const custom = p.difficulty === 'custom'
+        const confirming = pendingDeleteId === p.id
+        const actions = custom
+          ? `<button class="puzzle-act" data-edit="${p.id}" type="button" title="编辑题面">编辑</button>` +
+            `<button class="puzzle-act danger${confirming ? ' confirm' : ''}" data-del="${p.id}" type="button" title="${
+              confirming ? '再点一次确认删除' : '从题库删除'
+            }">${confirming ? '确认' : '×'}</button>`
+          : ''
         return `
-        <button class="puzzle-item${active}" data-id="${p.id}" type="button">
-          <span class="title">${p.name}</span>
-          <span class="meta">${p.width}×${p.height} · ${difficultyLabel(p.difficulty)}</span>
-        </button>
+        <div class="puzzle-row">
+          <button class="puzzle-item${active}" data-id="${p.id}" type="button">
+            <span class="title">${p.name}</span>
+            <span class="meta">${p.width}×${p.height} · ${difficultyLabel(p.difficulty)}</span>
+          </button>
+          ${actions}
+        </div>
       `
       })
       .join('')
@@ -172,6 +191,45 @@ export function createApp(root: HTMLElement, adapter: GameAdapter) {
         if (p) selectPuzzle(p)
       })
     })
+    list.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const p = btn.dataset.edit ? findPuzzle(btn.dataset.edit) : undefined
+        if (p) custom.openExisting(p)
+      })
+    })
+    list.querySelectorAll<HTMLButtonElement>('[data-del]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.del
+        if (!id) return
+        if (pendingDeleteId === id) deleteSavedPuzzle(id)
+        else {
+          pendingDeleteId = id
+          renderPuzzleList()
+        }
+      })
+    })
+  }
+
+  function deleteSavedPuzzle(id: string): void {
+    const puzzle = findPuzzle(id)
+    if (!puzzle || puzzle.difficulty !== 'custom') return
+    logicPlayer.stop()
+    clearProgress(id)
+    removeSavedPuzzle(id, codec)
+    custom.onPuzzleDeleted(id)
+    pendingDeleteId = null
+    refreshLibrary()
+    if (session?.puzzle.id === id) {
+      const next = sortedLibrary()[0]
+      if (next) selectPuzzle(next)
+      else {
+        session = null
+        refresh()
+      }
+    } else {
+      renderPuzzleList()
+    }
+    setStatus(`已从题库删除「${puzzle.name}」。`)
   }
 
   /* ———————————————————— 校验与状态 ———————————————————— */
@@ -225,9 +283,11 @@ export function createApp(root: HTMLElement, adapter: GameAdapter) {
   function selectPuzzle(puzzle: Puzzle): void {
     logicPlayer.stop()
     const saved = loadSave(puzzle.id)
+    const restored = saved && adapter.stateMatchesPuzzle?.(saved, puzzle) !== false ? saved : null
+    if (saved && !restored) clearProgress(puzzle.id)
     session = {
       puzzle,
-      state: saved ?? adapter.createEmptyState(puzzle),
+      state: restored ?? adapter.createEmptyState(puzzle),
       undo: [],
       redo: [],
     }
@@ -536,11 +596,13 @@ export function createApp(root: HTMLElement, adapter: GameAdapter) {
     samePuzzle: (id) => session?.puzzle.id === id,
     currentPuzzle: () => session?.puzzle ?? null,
     setButtonsDisabled,
-    onFinished: (_saturated, frames) => {
+    onFinished: (saturated, frames) => {
       updateLogicButton()
       if (session) {
         const result = currentResult()
         if (result?.solved) setStatus(`逻辑解题完成（${frames} 帧），盘面已解出。`, 'ok')
+        else if (!saturated)
+          setStatus(`回放完毕（${frames} 帧）：题目可能有多解，逻辑只能确定可推导的格子。`, 'bad')
         else setStatus(`回放完毕（${frames} 帧）。`, 'ok')
       }
     },
@@ -584,9 +646,23 @@ export function createApp(root: HTMLElement, adapter: GameAdapter) {
       setStatus(`已载入自定义 ${p.width}×${p.height}，并存入题库（刷新后仍在列表里）。`)
     },
     savePuzzle: (p) => {
+      const previous = findPuzzle(p.id)
+      const key = (x: Puzzle) => `${x.width}x${x.height}:${JSON.stringify(codec.encode(x))}`
+      const changed = previous ? key(previous) !== key(p) : false
+      // 题面改了：旧进度作废；若正在玩这张题，盘面按新题面重置
+      if (changed) clearProgress(p.id)
       savePuzzleToLibrary(p, codec)
       refreshLibrary()
       renderPuzzleList()
+      if (changed && session?.puzzle.id === p.id) {
+        session.puzzle = p
+        session.state = adapter.createEmptyState(p)
+        session.undo = []
+        session.redo = []
+        saveState()
+        refresh()
+        setStatus(`已更新自定义题「${p.name}」，盘面已按新题面重置。`, 'ok')
+      }
     },
     solveCurrent: () => {
       if (!session || !session.puzzle.id.startsWith(meta.customIdPrefix)) {

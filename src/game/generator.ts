@@ -1,7 +1,7 @@
 /**
  * 黑白+题库生成器
  *
- * 1. 随机生成一个满足「行列等量 + 不三连」的完整盘面；
+ * 1. 随机生成一个满足「行列等量 + 不三连 + 行列不重复」的完整盘面；
  * 2. 把所有格子预填和相邻关系线索混在一起随机排序；
  * 3. 二分查找最短的唯一解前缀；
  * 4. 简单题在此基础上再补一些线索，困难题在多个顺序里取线索最少者。
@@ -19,7 +19,7 @@ import {
   relationsEdgeCount,
   verticalEdgeIndex,
 } from './types.ts'
-import { solveByRules } from './rules.ts'
+import { hasDuplicateLines, solveByRules } from './rules.ts'
 import { countSolutions } from './solver.ts'
 
 export interface RawPuzzleOut {
@@ -66,8 +66,18 @@ function shuffle<T>(list: T[], rng: () => number): T[] {
   return list
 }
 
-/** 随机生成满足行列等量且不三连的完整盘面 */
+/** 随机生成满足行列等量、不三连且无重复行/列的完整盘面 */
 function generateFull(w: number, h: number, rng: () => number): number[] | null {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const cells = generateFullOnce(w, h, rng)
+    if (!cells) return null
+    if (!hasDuplicateLines(cells, w, h)) return cells
+  }
+  return null
+}
+
+/** 单次生成：行列等量 + 不三连 */
+function generateFullOnce(w: number, h: number, rng: () => number): number[] | null {
   const n = w * h
   const rowTarget = w / 2
   const colTarget = h / 2

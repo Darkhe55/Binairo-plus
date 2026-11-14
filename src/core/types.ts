@@ -129,6 +129,8 @@ export interface CustomSupport {
   encodePuzzle(p: Puzzle): Record<string, unknown>
   /** 从 library 条目还原题面；不合法返回 null */
   decodePuzzle(record: Record<string, unknown>): Puzzle | null
+  /** 把已有题面还原成编辑器网格（编辑功能用）；不支持时省略 */
+  valuesFromPuzzle?(puzzle: Puzzle): Array<number | null> | null
 }
 
 /**
@@ -156,6 +158,8 @@ export interface GameAdapter {
   valueAt(state: GameState, index: number): number
   serializeState(state: GameState): Record<string, unknown>
   deserializeState(data: Record<string, unknown>): GameState | null
+  /** 存档是否仍匹配当前题面（题面更新后旧进度必须丢弃）；缺省视为匹配 */
+  stateMatchesPuzzle?(state: GameState, puzzle: Puzzle): boolean
 
   // —— 校验 ——
   validate(state: GameState, puzzle: Puzzle): ValidationResult

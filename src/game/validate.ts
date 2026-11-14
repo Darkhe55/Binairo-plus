@@ -14,9 +14,11 @@ import {
   edgeCells,
   relationsEdgeCount,
   type BinairoResult,
+  type DuplicateLineIssue,
   type LineIssue,
   type RelationIssue,
 } from './types'
+import { duplicateLines } from './rules'
 
 export function validate(state: GameState, puzzle: Puzzle): BinairoResult {
   const s = asBinairoState(state)
@@ -96,6 +98,14 @@ export function validate(state: GameState, puzzle: Puzzle): BinairoResult {
     }
   }
 
+  const dup = duplicateLines(cells, w, h)
+  const duplicateLineIssues: DuplicateLineIssue[] = [
+    ...dup.rows.map((index) => ({ orientation: 'row' as const, index })),
+    ...dup.cols.map((index) => ({ orientation: 'col' as const, index })),
+  ]
+  for (const y of dup.rows) for (let x = 0; x < w; x++) bad.add(y * w + x)
+  for (const x of dup.cols) for (let y = 0; y < h; y++) bad.add(y * w + x)
+
   const relationIssues: RelationIssue[] = []
   const m = relationsEdgeCount(w, h)
   for (let edge = 0; edge < m; edge++) {
@@ -118,6 +128,7 @@ export function validate(state: GameState, puzzle: Puzzle): BinairoResult {
     complete &&
     tripleCount === 0 &&
     lineIssues.length === 0 &&
+    duplicateLineIssues.length === 0 &&
     relationIssues.length === 0 &&
     changed.size === 0
 
@@ -128,6 +139,7 @@ export function validate(state: GameState, puzzle: Puzzle): BinairoResult {
     tripleCount,
     tripleCells: Array.from(tripleCells),
     lineIssues,
+    duplicateLines: duplicateLineIssues,
     relationIssues,
     badCells: Array.from(bad),
     changedGivens: Array.from(changed),
@@ -146,6 +158,12 @@ export function statusBits(result: ValidationResult): string[] {
     const cols = r.lineIssues.length - rows
     if (rows > 0) bits.push(`${rows} 行数量不平衡`)
     if (cols > 0) bits.push(`${cols} 列数量不平衡`)
+  }
+  if (r.duplicateLines?.length > 0) {
+    const rows = r.duplicateLines.filter((x) => x.orientation === 'row').length
+    const cols = r.duplicateLines.length - rows
+    if (rows > 0) bits.push(`${rows} 行与其它行重复`)
+    if (cols > 0) bits.push(`${cols} 列与其它列重复`)
   }
   if (r.relationIssues.length > 0) bits.push(`${r.relationIssues.length} 处关系线索不满足`)
   if (r.changedGivens.length > 0) bits.push('题面预填格被改动')

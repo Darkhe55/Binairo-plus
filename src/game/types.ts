@@ -4,7 +4,8 @@
  * 规则：
  *   1. 每行、每列黑子与白子数量相同；
  *   2. 不能有三个及以上同色圆点相连；
- *   3. 标 "=" 的两格同色，标 "×" 的两格异色。
+ *   3. 任意两行、任意两列不能完全相同；
+ *   4. 标 "=" 的两格同色，标 "×" 的两格异色。
  *
  * 状态：0 = 未填，1 = 黑，2 = 白。
  * 关系：0 = 无，1 = 同色(=)，2 = 异色(×)。
@@ -43,6 +44,11 @@ export interface LineIssue {
   white: number
 }
 
+export interface DuplicateLineIssue {
+  orientation: 'row' | 'col'
+  index: number
+}
+
 export interface RelationIssue {
   edge: number
   a: number
@@ -58,6 +64,7 @@ export interface BinairoResult extends ValidationResult {
   tripleCount: number
   tripleCells: number[]
   lineIssues: LineIssue[]
+  duplicateLines: DuplicateLineIssue[]
   relationIssues: RelationIssue[]
   badCells: number[]
   changedGivens: number[]

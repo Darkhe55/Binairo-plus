@@ -168,7 +168,8 @@ async function analyzeImage(imagePath) {
 
       // —— 格子分类：黑 / 白 / 空 ——
       const innerR = Math.max(3, Math.round(Math.min(cellW, cellH) * 0.12))
-      const inkR = Math.max(innerR + 2, Math.round(Math.min(cellW, cellH) * 0.4))
+      const ringOuter = Math.min(cellW, cellH) * 0.46
+      const ringInner = Math.min(cellW, cellH) * 0.18
       const cellStats = (x, y) => {
         let sum = 0
         let n = 0
@@ -179,11 +180,15 @@ async function analyzeImage(imagePath) {
             n++
           }
         }
+        // 只看对角线方向的圆环：线索画在上下左右边中点，不会污染这里
         let ink = 0
         let total = 0
-        for (let dy = -inkR; dy <= inkR; dy++) {
-          for (let dx = -inkR; dx <= inkR; dx++) {
-            if (dx * dx + dy * dy > inkR * inkR) continue
+        const reach = Math.ceil(ringOuter)
+        for (let dy = -reach; dy <= reach; dy++) {
+          for (let dx = -reach; dx <= reach; dx++) {
+            const d = Math.sqrt(dx * dx + dy * dy)
+            if (d < ringInner || d > ringOuter) continue
+            if (Math.abs(Math.abs(dx) - Math.abs(dy)) > d * 0.35) continue
             total++
             if (px(x + dx, y + dy) < 235) ink++
           }
@@ -210,8 +215,9 @@ async function analyzeImage(imagePath) {
       // 圆点是大连通域，线索是小连通域；按连通域面积 + 位置筛选，避免圆点弧线误判。
       const edgeCount = (cols > 1 ? rows * (cols - 1) : 0) + (rows > 1 ? (rows - 1) * cols : 0)
       const relations = new Array(edgeCount).fill(0)
+      const markers = []
       const ink = new Uint8Array(W * H)
-      for (let p = 0; p < ink.length; p++) ink[p] = lum[p] < 150 ? 1 : 0
+      for (let p = 0; p < ink.length; p++) ink[p] = lum[p] < 190 ? 1 : 0
       const seen = new Uint8Array(W * H)
       const stack = []
       const hCount = cols > 1 ? rows * (cols - 1) : 0
@@ -284,8 +290,7 @@ async function analyzeImage(imagePath) {
             bestEdge = e
           }
         }
-        if (bestEdge < 0 || bestDist > Math.min(cellW, cellH) * 0.3) continue
-        if (relations[bestEdge] !== 0) continue
+        if (bestEdge < 0) continue
 
         const r = sr / area
         const g = sg / area
@@ -305,8 +310,21 @@ async function analyzeImage(imagePath) {
             const dy = Math.abs(((cur / W) | 0) - midY)
             if (Math.abs(dx - dy) <= Math.max(1, bw * 0.12)) diagonal++
           }
-          value = diagonal / area > 0.45 || bw < bh * 1.2 ? 2 : 1
+          // 只有斜向笔画是 ×；= 无论横竖都是直笔画
+          value = diagonal / area > 0.5 ? 2 : 1
         }
+        markers.push({
+          x: +gx.toFixed(1),
+          y: +gy.toFixed(1),
+          area,
+          w: maxX - minX + 1,
+          h: maxY - minY + 1,
+          dist: +bestDist.toFixed(1),
+          value,
+        })
+        // 线索画在边中点上；棋子圆环的碎片离边中点约 12px，必须排除
+        if (bestDist > Math.min(cellW, cellH) * 0.18) continue
+        if (relations[bestEdge] !== 0) continue
         relations[bestEdge] = value
       }
 
@@ -316,6 +334,7 @@ async function analyzeImage(imagePath) {
         givens,
         relations,
         rowsText,
+        markers,
         grid: { left: vLines.first, top: hLines.first, cellW, cellH, imageW: W, imageH: H },
       }
     }, src)
@@ -341,7 +360,11 @@ if (detected.error) {
   process.exit(1)
 }
 
-const { width, height, givens, relations, rowsText, grid } = detected
+const { width, height, givens, relations, rowsText, markers, grid } = detected
+if (process.env.DEBUG_RECOGNIZE) {
+  console.log('[recognize] 候选墨迹块：', markers.length)
+  for (const m of markers.slice(0, 120)) console.log('  ', JSON.stringify(m))
+}
 const expectedEdges = relationsEdgeCount(width, height)
 if (relations.length !== expectedEdges) {
   console.error('[recognize] 关系线索数量异常')

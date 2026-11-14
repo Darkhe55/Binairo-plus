@@ -4,6 +4,7 @@
 
 import type { GameState, LogicPlan, PlaybackFrame, Puzzle } from '../core/types'
 import { isValidSolution, propagate, type RuleKind } from './rules'
+import { countSolutions } from './solver'
 import {
   asBinairoPuzzle,
   asBinairoState,
@@ -16,9 +17,10 @@ import {
 const RULE_INFO: Record<RuleKind | 'probe' | 'search', { rule: number; label: string }> = {
   triple: { rule: 1, label: '不能有三个同色相连' },
   count: { rule: 2, label: '每行每列黑白数量相同' },
-  relation: { rule: 3, label: '关系线索：= 同色，× 异色' },
-  probe: { rule: 4, label: '反证：另一种颜色会立刻矛盾' },
-  search: { rule: 5, label: '回溯试探：该格最终是这一色' },
+  unique: { rule: 3, label: '任意两行、两列不能完全相同' },
+  relation: { rule: 4, label: '关系线索：= 同色，× 异色' },
+  probe: { rule: 5, label: '反证：另一种颜色会立刻矛盾' },
+  search: { rule: 6, label: '回溯试探：该格最终是这一色' },
 }
 
 function fallbackSolve(
@@ -167,14 +169,27 @@ export function planLogicSolve(puzzle: Puzzle, initialState: GameState): LogicPl
   }
 
   if (stillUnknown) {
-    const found = fallbackSolve(grid, relations, w, h, 800_000)
-    if (!found) return emptyPlan
-    for (let i = 0; i < size; i++) {
-      if (grid[i] === found[i]) continue
-      grid[i] = found[i]!
-      emit(i, found[i]!, 'search')
+    // 规则推不动时不能直接猜：先确认剩余空格在规则下是否只有唯一填法。
+    // 多解题若强行回溯，会填入某一个合法解，但在用户看来就是「错解」。
+    const counted = countSolutions(
+      { givens: grid, relations, width: w, height: h },
+      2,
+      400_000,
+    )
+    if (counted.timedOut || counted.count > 1) {
+      saturated = false
+    } else if (counted.count === 0) {
+      return emptyPlan
+    } else {
+      const found = fallbackSolve(grid, relations, w, h, 800_000)
+      if (!found) return emptyPlan
+      for (let i = 0; i < size; i++) {
+        if (grid[i] === found[i]) continue
+        grid[i] = found[i]!
+        emit(i, found[i]!, 'search')
+      }
+      saturated = false
     }
-    saturated = false
   }
 
   const finalState: BinairoState = {

@@ -113,7 +113,7 @@ export class LogicPlayer {
     if (!plan.frames.length) {
       this._playing = false
       this.hooks.setButtonsDisabled(false)
-      this.hooks.setStatus('逻辑规则暂无新推演（可能已卡关或已全部确定）。')
+      this.hooks.setStatus('逻辑规则暂无新推演（可能已卡关、已全部确定，或题目有多解）。')
       return
     }
 

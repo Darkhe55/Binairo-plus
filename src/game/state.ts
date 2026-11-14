@@ -72,6 +72,19 @@ export function valueAt(state: GameState, index: number): number {
   return asBinairoState(state).cells[index] ?? EMPTY
 }
 
+/** 存档的预填格必须与当前题面一致，否则视为旧题面的过期进度 */
+export function stateMatchesPuzzle(state: GameState, puzzle: Puzzle): boolean {
+  const s = asBinairoState(state)
+  const p = asBinairoPuzzle(puzzle)
+  const size = p.width * p.height
+  if (s.width !== p.width || s.height !== p.height) return false
+  if (s.givens.length !== size || s.cells.length !== size) return false
+  for (let i = 0; i < size; i++) {
+    if ((s.givens[i] ?? EMPTY) !== (p.givens?.[i] ?? EMPTY)) return false
+  }
+  return true
+}
+
 export function serializeState(state: GameState): Record<string, unknown> {
   const s = asBinairoState(state)
   return {

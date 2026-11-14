@@ -27,6 +27,7 @@ import {
   invertMove,
   rightClickValue,
   serializeState,
+  stateMatchesPuzzle,
   valueAt,
 } from './state'
 import { statusBits, validate } from './validate'
@@ -42,9 +43,9 @@ import {
 
 const meta = {
   title: '黑白+',
-  tagline: '行列黑白等量、不出现三连 —— 再用 = 与 × 锁定每一对',
+  tagline: '行列黑白等量、不出现三连、行列不重复 —— 再用 = 与 × 锁定每一对',
   footerNote:
-    '规则：每行每列黑子与白子数量相同；不能有三个及以上同色圆点相连；标 "=" 的两格同色，标 "×" 的两格异色。预填格不能修改。',
+    '规则：每行每列黑子与白子数量相同；不能有三个及以上同色圆点相连；任意两行、两列不能完全相同；标 "=" 的两格同色，标 "×" 的两格异色。预填格不能修改。',
   storageKeyPrefix: 'binairo-plus',
   customIdPrefix: 'binairo-plus-custom-',
   customMinW: 4,
@@ -105,6 +106,13 @@ const custom: CustomSupport = {
     }
   },
 
+  valuesFromPuzzle: (puzzle) => {
+    const p = puzzle as BinairoPuzzle
+    const size = p.width * p.height
+    if (!Array.isArray(p.givens) || p.givens.length !== size) return null
+    return p.givens.map((v) => (v === BLACK || v === WHITE ? v : null))
+  },
+
   decodePuzzle: (record) => {
     if (typeof record.id !== 'string') return null
     if (typeof record.width !== 'number' || typeof record.height !== 'number') return null
@@ -158,6 +166,7 @@ export const adapter: GameAdapter = {
   valueAt,
   serializeState,
   deserializeState,
+  stateMatchesPuzzle,
   validate,
   statusBits,
   metricsFor,

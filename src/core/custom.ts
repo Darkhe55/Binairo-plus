@@ -31,6 +31,9 @@ export class CustomEditor {
   private grid: Array<number | null> = []
   private cursor = 0
   private adapter: GameAdapter
+  /** 非空表示正在编辑题库里的已有题，保存时覆盖同一 id */
+  private editingId: string | null = null
+  private editingName: string | null = null
 
   constructor(adapter: GameAdapter, private host: CustomHost) {
     this.adapter = adapter
@@ -127,7 +130,7 @@ export class CustomEditor {
     grid.tabIndex = 0
   }
 
-  open(): void {
+  private openPanel(): void {
     const panel = document.getElementById('custom-editor')
     if (!panel) return
     panel.hidden = false
@@ -137,15 +140,50 @@ export class CustomEditor {
     if (hEl) hEl.value = String(this.h)
     if (this.cursor >= this.w * this.h) this.cursor = 0
     this.renderGrid()
-    this.host.message(`键盘：方向键移动 · ${this.adapter.custom.hint}`)
     document.getElementById('custom-grid')?.focus()
   }
 
+  open(): void {
+    this.openPanel()
+    this.host.message(
+      this.editingId
+        ? `正在编辑「${this.editingName}」；保存会覆盖原题。${this.adapter.custom.hint}`
+        : `键盘：方向键移动 · ${this.adapter.custom.hint}`,
+    )
+  }
+
+  /** 把题库里的自定义题载回编辑器；保存时覆盖同一 id */
+  openExisting(puzzle: Puzzle): void {
+    const values = this.adapter.custom.valuesFromPuzzle?.(puzzle)
+    if (!values) {
+      this.host.message('该题面无法在编辑器中打开。', 'bad')
+      return
+    }
+    this.editingId = puzzle.id
+    this.editingName = puzzle.name
+    this.w = puzzle.width
+    this.h = puzzle.height
+    this.grid = values.slice()
+    this.cursor = 0
+    this.openPanel()
+    this.host.message(`正在编辑「${puzzle.name}」；保存会覆盖原题。`, 'ok')
+  }
+
+  /** 正在编辑的题被删除时，退出编辑态，避免保存时复活旧题 */
+  onPuzzleDeleted(id: string): void {
+    if (this.editingId !== id) return
+    this.editingId = null
+    this.editingName = null
+    this.host.message('正在编辑的题已从题库删除；此时保存会创建新题。', 'bad')
+  }
+
   regen(): void {
+    this.editingId = null
+    this.editingName = null
     this.grid = new Array<number | null>(this.w * this.h).fill(null)
     this.cursor = 0
     this.renderGrid()
-    this.host.message(`已生成 ${this.w}×${this.h} 网格。${this.adapter.custom.hint}`)
+    this.host.message(`已新建 ${this.w}×${this.h} 网格。${this.adapter.custom.hint}`)
     document.getElementById('custom-grid')?.focus()
   }
 
@@ -232,9 +270,10 @@ export class CustomEditor {
       this.host.message('网格已重置，请先填好内容。', 'bad')
       return
     }
-    // 用「宽x高」做稳定 id，重复载入同尺寸只覆盖同一条（进度按 id 存）
-    const stableId = `${this.adapter.meta.customIdPrefix}${w}x${h}`
-    const puzzle = this.makePuzzle(stableId)
+    // 新建时用「宽x高」做稳定 id；编辑已有题时沿用原 id
+    const id = this.editingId ?? `${this.adapter.meta.customIdPrefix}${w}x${h}`
+    const puzzle = this.makePuzzle(id)
+    if (this.editingName) puzzle.name = this.editingName
     this.host.loadPuzzle(puzzle)
   }
 
@@ -246,10 +285,17 @@ export class CustomEditor {
     }
     const stamp = new Date()
     const pad = (n: number) => String(n).padStart(2, '0')
-    const name = `自定义 · ${w}×${h} · ${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}${pad(stamp.getHours())}${pad(stamp.getMinutes())}`
-    const puzzle = { ...this.makePuzzle(), name }
+    const name =
+      this.editingName ??
+      `自定义 · ${w}×${h} · ${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}${pad(stamp.getHours())}${pad(stamp.getMinutes())}`
+    const puzzle = { ...this.makePuzzle(this.editingId ?? undefined), name }
     this.host.savePuzzle(puzzle)
-    this.host.message(`已保存到题库：「${name}」，下次启动仍可选用。`, 'ok')
+    this.host.message(
+      this.editingId
+        ? `已更新题库：「${name}」。`
+        : `已保存到题库：「${name}」，下次启动仍可选用。`,
+      'ok',
+    )
   }
 
   solve(): void {

@@ -3,7 +3,8 @@
  *
  * R1 每行每列黑/白数量相同；
  * R2 不能有三个及以上同色相连；
- * R3 "=" 同色，"×" 异色。
+ * R3 任意两行、任意两列不能完全相同；
+ * R4 "=" 同色，"×" 异色。
  */
 
 import {
@@ -17,7 +18,7 @@ import {
   type BinairoPuzzle,
 } from './types.ts'
 
-export type RuleKind = 'triple' | 'count' | 'relation'
+export type RuleKind = 'triple' | 'count' | 'unique' | 'relation'
 
 export type SetCallback = (index: number, value: number, rule: RuleKind) => void
 
@@ -32,6 +33,45 @@ export function initialGrid(givens: ArrayLike<number>, size: number): number[] {
 
 function opposite(v: number): number {
   return v === BLACK ? WHITE : BLACK
+}
+
+/** 完整行/列中与其他行/列完全相同的下标 */
+export function duplicateLines(
+  cells: ArrayLike<number>,
+  w: number,
+  h: number,
+): { rows: number[]; cols: number[] } {
+  const scan = (horizontal: boolean): number[] => {
+    const count = horizontal ? h : w
+    const len = horizontal ? w : h
+    const groups = new Map<string, number[]>()
+    for (let i = 0; i < count; i++) {
+      let key = ''
+      let complete = true
+      for (let j = 0; j < len; j++) {
+        const v = horizontal ? cells[i * w + j] : cells[j * w + i]
+        if (v !== BLACK && v !== WHITE) {
+          complete = false
+          break
+        }
+        key += v === BLACK ? '1' : '2'
+      }
+      if (!complete) continue
+      const list = groups.get(key)
+      if (list) list.push(i)
+      else groups.set(key, [i])
+    }
+    const out: number[] = []
+    for (const list of groups.values()) if (list.length > 1) out.push(...list)
+    return out
+  }
+
+  return { rows: scan(true), cols: scan(false) }
+}
+
+export function hasDuplicateLines(cells: ArrayLike<number>, w: number, h: number): boolean {
+  const dup = duplicateLines(cells, w, h)
+  return dup.rows.length > 0 || dup.cols.length > 0
 }
 
 export function propagate(
@@ -157,6 +197,102 @@ export function propagate(
         }
       }
     }
+
+    // —— R3：任意两行/两列不能完全相同 ——
+    const rowEmpty = new Array<number>(h).fill(0)
+    const rowEmptyAt = new Array<number>(h).fill(-1)
+    const rowKeys = new Array<string | null>(h).fill(null)
+    for (let y = 0; y < h; y++) {
+      let empty = 0
+      let at = -1
+      let key = ''
+      for (let x = 0; x < w; x++) {
+        const v = cells[y * w + x]
+        if (v === EMPTY) {
+          empty++
+          at = x
+        } else {
+          key += v === BLACK ? '1' : '2'
+        }
+      }
+      rowEmpty[y] = empty
+      if (empty === 1) rowEmptyAt[y] = at
+      if (empty === 0) rowKeys[y] = key
+    }
+
+    const seenRows = new Set<string>()
+    for (let y = 0; y < h; y++) {
+      const key = rowKeys[y]
+      if (key === null) continue
+      if (seenRows.has(key)) return false
+      seenRows.add(key)
+    }
+
+    // 一行已完整、另一行只差一格且其余相同 → 空格必须与该完整行相反
+    for (let a = 0; a < h; a++) {
+      if (rowEmpty[a] !== 0) continue
+      for (let b = 0; b < h; b++) {
+        if (b === a || rowEmpty[b] !== 1) continue
+        const at = rowEmptyAt[b]!
+        let same = true
+        for (let x = 0; x < w; x++) {
+          if (x === at) continue
+          if (cells[a * w + x] !== cells[b * w + x]) {
+            same = false
+            break
+          }
+        }
+        if (!same) continue
+        if (!set(b * w + at, opposite(cells[a * w + at]!), 'unique')) return false
+      }
+    }
+
+    const colEmpty = new Array<number>(w).fill(0)
+    const colEmptyAt = new Array<number>(w).fill(-1)
+    const colKeys = new Array<string | null>(w).fill(null)
+    for (let x = 0; x < w; x++) {
+      let empty = 0
+      let at = -1
+      let key = ''
+      for (let y = 0; y < h; y++) {
+        const v = cells[y * w + x]
+        if (v === EMPTY) {
+          empty++
+          at = y
+        } else {
+          key += v === BLACK ? '1' : '2'
+        }
+      }
+      colEmpty[x] = empty
+      if (empty === 1) colEmptyAt[x] = at
+      if (empty === 0) colKeys[x] = key
+    }
+
+    const seenCols = new Set<string>()
+    for (let x = 0; x < w; x++) {
+      const key = colKeys[x]
+      if (key === null) continue
+      if (seenCols.has(key)) return false
+      seenCols.add(key)
+    }
+
+    for (let a = 0; a < w; a++) {
+      if (colEmpty[a] !== 0) continue
+      for (let b = 0; b < w; b++) {
+        if (b === a || colEmpty[b] !== 1) continue
+        const at = colEmptyAt[b]!
+        let same = true
+        for (let y = 0; y < h; y++) {
+          if (y === at) continue
+          if (cells[y * w + a] !== cells[y * w + b]) {
+            same = false
+            break
+          }
+        }
+        if (!same) continue
+        if (!set(at * w + b, opposite(cells[at * w + a]!), 'unique')) return false
+      }
+    }
   }
 
   return true
@@ -198,6 +334,8 @@ export function isValidSolution(
       if (cells[a] === cells[a + w] && cells[a] === cells[a + 2 * w]) return false
     }
   }
+
+  if (hasDuplicateLines(cells, w, h)) return false
 
   const m = relationsEdgeCount(w, h)
   for (let edge = 0; edge < m; edge++) {
