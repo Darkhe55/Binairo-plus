@@ -1,0 +1,107 @@
+/* ════════════════════════════════════════════════════════════════
+   黑白+（Binairo+ / Tango）—— 游戏专用皮肤
+   ════════════════════════════════════════════════════════════════ */
+
+:root {
+  --bp-ink: #24231f;
+  --bp-paper: #fffdf8;
+  --bp-board: #ece4d3;
+  --bp-board-line: #d4cbb9;
+}
+
+.board-svg .bp-board-bg {
+  fill: var(--bp-board);
+  stroke: var(--bp-board-line);
+  stroke-width: 1.5;
+}
+
+.board-svg .bp-cell {
+  stroke: #cfc6b5;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.board-svg .bp-cell.empty {
+  fill: #fbf7ee;
+  stroke: #d9d2c3;
+}
+
+.board-svg .bp-cell.black {
+  fill: #e9e2d2;
+}
+.board-svg .bp-cell.white {
+  fill: #fffdf8;
+}
+
+.board-svg .bp-dot.black {
+  fill: var(--bp-ink);
+}
+
+.board-svg .bp-dot.white {
+  fill: #ffffff;
+  stroke: #c9c0ae;
+  stroke-width: 1.2;
+}
+
+.board-svg .bp-given-ring {
+  fill: none;
+  stroke: #1f6f5c;
+  stroke-width: 1.6;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.board-svg .bp-relation circle {
+  fill: #fffdf8;
+  stroke: #b7ae9a;
+  stroke-width: 1.2;
+}
+
+.board-svg .bp-relation text {
+  fill: var(--bp-ink);
+  font-family: var(--mono);
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.board-svg .bp-relation.same circle {
+  stroke: #1f6f5c;
+}
+.board-svg .bp-relation.same text {
+  fill: #1f6f5c;
+}
+.board-svg .bp-relation.diff circle {
+  stroke: #a3485c;
+}
+.board-svg .bp-relation.diff text {
+  fill: #a3485c;
+}
+
+.board-svg .bp-error {
+  fill: rgba(194, 59, 46, 0.15);
+  stroke: var(--error);
+  stroke-width: 2.4;
+  pointer-events: none;
+}
+
+.board-svg .cell-hit {
+  pointer-events: all;
+}
+
+.board-svg .cell-hit:hover {
+  fill: rgba(31, 111, 92, 0.16);
+}
+
+.custom-cell.v-black {
+  background: var(--bp-ink);
+  border-color: var(--bp-ink);
+  color: #fffdf8;
+}
+
+.custom-cell.v-white {
+  background: #fff;
+  border-color: #b7ae9a;
+  color: var(--bp-ink);
+}
