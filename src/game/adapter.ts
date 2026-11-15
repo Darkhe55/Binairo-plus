@@ -50,8 +50,8 @@ const meta = {
   customIdPrefix: 'binairo-plus-custom-',
   customMinW: 4,
   customMinH: 4,
-  customMaxW: 12,
-  customMaxH: 12,
+  customMaxW: 40,
+  customMaxH: 50,
 }
 
 const VALUE_CYCLE: Array<number | null> = [null, BLACK, WHITE]
