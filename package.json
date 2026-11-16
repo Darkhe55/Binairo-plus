@@ -14,6 +14,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "gen": "node scripts/gen-puzzles.mjs",
+    "import-image": "node scripts/import-image.mjs",
     "recognize": "node scripts/recognize-puzzle.mjs",
     "check": "node scripts/check.mjs",
     "ui-check": "node scripts/ui-check.mjs",

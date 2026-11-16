@@ -85,8 +85,46 @@ npm run dev       # 开发服务
 npm start         # 开发服务 + 自动打开浏览器
 npm run build     # tsc --noEmit + vite build
 npm run gen       # 重新生成题库（含图片识别导入的题）
-npm run recognize -- <图片> [--name 名称] [--series 系列] [--add]  # 识别截图题目
+npm run import-image -- <图片> [选项]  # 识图导入：预览 / --append 写入 scripts/printed-puzzles.json
+npm run recognize -- <图片> [--name 名称] [--series 系列] [--add]  # 旧版识别截图工具（同样写入 printed-puzzles.json）
 npm run check     # 审计题库
 npm run verify    # 参考解、逻辑回放与交互验证
 npm run audit     # 逐题审计逻辑解题
 ```
+
+## 图片识别导入
+
+用 Playwright + Edge 全自动识别题面截图里的网格、预填圆子与 `=`/`×` 关系线索，
+校验唯一解后预览 / 写入 `scripts/printed-puzzles.json`（`npm run gen` 会合并进内置题库）。
+
+```bash
+# 只识别 + 预览（自动做唯一性检查并给出参考解）
+npm run import-image -- 题面截图.png
+
+# 只识别，不求解、不写入
+npm run import-image -- 题面截图.png --dry
+
+# 人工修正个别预填格后追加（行列从 1 开始，B/W/. 表示黑/白/空）
+npm run import-image -- 题面截图.png --map 3,4=B --name "我的黑白+" --append
+
+# 写入后重建题库
+npm run gen
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--name 名称` / `--id ID` | 名称 / 指定 id |
+| `--series 系列` | 系列名（默认「图片识别」） |
+| `--difficulty 级别` | `easy` / `medium` / `hard`（默认 `hard`） |
+| `--size N` | 正方形网格边长；默认自动识别 |
+| `--width N` / `--height N` | 矩形题图宽/高，可只给一边 |
+| `--map 行,列=值` | 人工覆盖某格预填（`B`/`1` 黑，`W`/`2` 白，`.`/`0` 空） |
+| `--append` | 追加到 `scripts/printed-puzzles.json` |
+| `--dry` | 只识别，不求解、不写入 |
+| `--max-nodes N` | 唯一性搜索节点上限（默认 2000000） |
+| `--edge PATH` | 指定 Edge 路径（默认自动探测） |
+
+识别流程：以亮度众数作背景 → 多档阈值投影找网格线（并用内部线拟合修正外圈圆角造成的偏移）→
+每格判断黑点/白点与绿色给定圆环 → 相邻格中点的小圆标按绿色 `=` / 红色 `×` 判定关系 →
+生成「预填格串 + 关系串」，校验唯一解并给出参考解。内置题截图可直接导入核对。
+
