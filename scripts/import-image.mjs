@@ -339,26 +339,71 @@ async function analyzeImage({ imageFile, edge, size, width, height }) {
           }
         }
 
-        // —— 关系线索：相邻格中点的小圆标：绿色 = / 红色 × ——
-        // 关系标的彩色字形位于中点附近（半径约 0.08 格宽），而给定格的绿色圆环离中点更远，
-        // 因此只用中点附近的小窗口统计颜色，避免把给定格圆环误判成关系。
-        const half = Math.max(2, cellMin * 0.065)
-        const circleInk = (x, y) => {
+        // —— 关系线索：相邻格中点的小圆标 ——
+        // 网页版题图用绿色 = / 红色 × 表示；印刷版（如月度题图）是灰黑单色，
+        // 用字形走向区分：= / ‖ 是一条明显的横/竖笔画序列（= 画在竖边上、‖ 画在横边上），
+        // × 是斜向笔画、横竖最长游程都短。只用中点附近的小窗口，避免误吃给定格的圆环。
+        const half = Math.max(3, Math.round(cellMin * 0.13))
+        const markerAt = (x, y) => {
           let greenCount = 0
           let redCount = 0
-          for (let dy = -Math.ceil(half); dy <= Math.ceil(half); dy++) {
-            for (let dx = -Math.ceil(half); dx <= Math.ceil(half); dx++) {
+          const pts = []
+          let minDX = 0
+          let maxDX = 0
+          let minDY = 0
+          let maxDY = 0
+          for (let dy = -half; dy <= half; dy++) {
+            for (let dx = -half; dx <= half; dx++) {
               if (dx * dx + dy * dy > half * half) continue
-              const [, rgbVal] = pixel(x + dx, y + dy)
+              const [lumVal, rgbVal] = pixel(x + dx, y + dy)
               const [rr, gg, bb] = rgbVal
-              if (gg > rr + 22 && gg > bb + 8) greenCount++
-              if (rr > gg + 22 && rr > bb + 8) redCount++
+              if (gg > rr + 22 && gg > bb + 8) {
+                greenCount++
+              } else if (rr > gg + 22 && rr > bb + 8) {
+                redCount++
+              } else if (lumVal < 215) {
+                pts.push([dx, dy])
+                if (dx < minDX) minDX = dx
+                if (dx > maxDX) maxDX = dx
+                if (dy < minDY) minDY = dy
+                if (dy > maxDY) maxDY = dy
+              }
             }
           }
           if (greenCount >= redCount && greenCount > 2) return 1
           if (redCount > greenCount && redCount > 2) return 2
-          return 0
+          if (pts.length < 18) return 0
+          // 最长横/竖游程（只统计窗口内的墨迹像素）
+          let longestH = 0
+          let longestV = 0
+          for (let dy = minDY; dy <= maxDY; dy++) {
+            let run = 0
+            for (let dx = minDX; dx <= maxDX + 1; dx++) {
+              const on = dx <= maxDX && pts.some((p) => p[0] === dx && p[1] === dy)
+              if (on) {
+                run++
+                if (run > longestH) longestH = run
+              } else run = 0
+            }
+          }
+          for (let dx = minDX; dx <= maxDX; dx++) {
+            let run = 0
+            for (let dy = minDY; dy <= maxDY + 1; dy++) {
+              const on = dy <= maxDY && pts.some((p) => p[0] === dx && p[1] === dy)
+              if (on) {
+                run++
+                if (run > longestV) longestV = run
+              } else run = 0
+            }
+          }
+          const bw = maxDX - minDX + 1
+          const bh = maxDY - minDY + 1
+          const maxDim = Math.max(bw, bh)
+          // = / ‖：某个方向游程几乎等于字形宽度/高度；× 两个方向都只有约 0.7 倍
+          if (maxDim > 0 && (longestH >= maxDim * 0.85 || longestV >= maxDim * 0.85)) return 1
+          return 2
         }
+        const circleInk = markerAt
         const relations = new Array(w > 1 && h > 1 ? h * (w - 1) + (h - 1) * w : 0).fill(0)
         if (w > 1) {
           const hCount = h * (w - 1)
@@ -434,6 +479,9 @@ if (detected.error) {
 }
 const { width, height, grid } = detected
 const size = width * height
+// 30×40 这类月度大棋盘的回溯搜索基本跑不动：默认节点上限按盘面大小收敛，
+// 超时只告警、题面照常入库（可用 --max-nodes 显式放宽）。
+const maxNodes = opts.maxNodes === 2_000_000 && size > 400 ? 150_000 : opts.maxNodes
 let givens = detected.givens.slice()
 const relations = detected.relations.slice()
 
@@ -512,7 +560,7 @@ const solverMod = await import('../src/game/solver.ts')
 const puzzle = { id, name, width, height, difficulty: opts.difficulty, givens, relations }
 console.log('[import] 唯一性检查…')
 const t0 = Date.now()
-const counted = solverMod.countSolutions(puzzle, 2, opts.maxNodes)
+const counted = solverMod.countSolutions(puzzle, 2, maxNodes)
 const ms = Date.now() - t0
 if (counted.timedOut) {
   console.warn(`[import] 唯一性检查超时（${counted.nodes} 节点 / ${ms}ms）；可放宽 --max-nodes。`)
@@ -521,11 +569,11 @@ if (counted.timedOut) {
   process.exit(1)
 } else if (counted.count === 1) {
   console.log(`[import] 唯一解确认（${counted.nodes} 节点 / ${ms}ms）`)
-  const solved = solverMod.solvePuzzle(puzzle, opts.maxNodes)
+  const solved = solverMod.solvePuzzle(puzzle, maxNodes)
   if (solved.solution) entry.solution = solved.solution.cells.join('')
 } else {
   console.warn(`[import] 警告：找到 ${counted.count} 个解（上限），题目可能不唯一。`)
-  const solved = solverMod.solvePuzzle(puzzle, opts.maxNodes)
+  const solved = solverMod.solvePuzzle(puzzle, maxNodes)
   if (solved.solution) entry.solution = solved.solution.cells.join('')
 }
 
@@ -533,15 +581,17 @@ if (!opts.append) {
   console.log('[import] 预览模式（未写入题库）。加 --append 写入 scripts/printed-puzzles.json（再 npm run gen 进入题库）。')
   console.log(
     `[import] 题库条目：id=${id} name=${name} 尺寸=${width}×${height} 给定=${black + white} 格 关系=${relSame + relDiff} 条` +
-      (entry.solution ? ` 参考解=${entry.solution.length} 格` : ''),
+      (entry.solution ? ` 参考解=${entry.solution.length} 格` : ' 暂无参考解（大盘面求解超时）'),
   )
   console.log(`[import] board = ${board}`)
 } else {
-  if (!entry.solution) {
-    console.error('[import] 拒绝写入：没有求得参考解（请先用 --verify/放宽限制确认题目可解）')
-    process.exit(1)
-  }
+  // 30×40 这类月度大盘的唯一性搜索基本跑不动：超时只告警，题面照常入库
+  //（没有参考解时，游戏内「显示解 / 提示」会退回运行期求解）。
   appendEntry(entry)
-  console.log(`[import] 已写入 ${path.relative(process.cwd(), DATA_FILE)}：${id} ${name}；运行 npm run gen 重建题库`)
+  console.log(
+    `[import] 已写入 ${path.relative(process.cwd(), DATA_FILE)}：${id} ${name}` +
+      (entry.solution ? '' : '（无参考解，提示/显示解可能较慢）'),
+  )
+  console.log('[import] 运行 npm run gen 重建题库')
 }
 
